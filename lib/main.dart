@@ -12,17 +12,19 @@ void main() {
   SystemChrome.setPreferredOrientations([
     DeviceOrientation.landscapeLeft,
   ]);
-  runApp(GameWidget(game: Game()));
+  runApp(GameWidget(game: MortalTekken()));
 }
 
 class Player extends SpriteAnimationComponent
-    with HasGameReference<Game>, CollisionCallbacks {
+    with HasGameReference<MortalTekken>, CollisionCallbacks {
   final int number;
   final double playerSize;
+  bool isGettingAttacked;
 
   Player({
     required this.number,
     required this.playerSize,
+    this.isGettingAttacked = false,
   });
 
   @override
@@ -72,10 +74,14 @@ class Player extends SpriteAnimationComponent
     position.add(Vector2(-distance, 0));
   }
 
+  set setGettingAttacked(bool x) => isGettingAttacked = x;
+
   @override
   void onCollision(Set<Vector2> points, PositionComponent other) {
     super.onCollision(points, other);
-    print("hola");
+    if (isGettingAttacked) {
+      print("$number");
+    }
   }
 
   //
@@ -86,7 +92,8 @@ class Player extends SpriteAnimationComponent
   }
 }
 
-class Game extends FlameGame with KeyboardEvents, HasCollisionDetection {
+class MortalTekken extends FlameGame
+    with KeyboardEvents, HasCollisionDetection {
   late Player player1;
   late Player player2;
   late SpriteAnimationTicker a;
@@ -95,6 +102,8 @@ class Game extends FlameGame with KeyboardEvents, HasCollisionDetection {
   double distance = 30;
   bool isAttacking1 = false;
   bool isAttacking2 = false;
+  int playerHP1 = 10;
+  int playerHP2 = 10;
 
   double get playerSizeMultiplied => playerSize * sizeMultiplier;
 
@@ -122,6 +131,7 @@ class Game extends FlameGame with KeyboardEvents, HasCollisionDetection {
 
     add(player1);
     add(player2);
+    camera.viewport.add(Hud(playerNumber: 1));
   }
 
   @override
@@ -163,30 +173,140 @@ class Game extends FlameGame with KeyboardEvents, HasCollisionDetection {
 
     if (isE && !isAttacking1) {
       player1.attack();
+      player2.isGettingAttacked = true;
       isAttacking1 = true;
       return KeyEventResult.handled;
     }
 
     if (isR && isAttacking1) {
-      print('COMING HERE');
       player1.goIdle();
+      player2.isGettingAttacked = false;
       isAttacking1 = false;
       return KeyEventResult.handled;
     }
 
     if (isLeftBracket && !isAttacking2) {
       player2.attack();
+      player1.isGettingAttacked = true;
       isAttacking2 = true;
       return KeyEventResult.handled;
     }
 
     if (isRightBracket && isAttacking2) {
-      print('COMING HERE');
       player2.goIdle();
+      player1.isGettingAttacked = false;
       isAttacking2 = false;
       return KeyEventResult.handled;
     }
 
     return KeyEventResult.ignored;
+  }
+}
+
+enum HeartState {
+  available, // Current HP
+  unavailable, // Lost Health
+}
+
+class HeartHealthComponent extends SpriteGroupComponent<HeartState>
+    with HasGameReference<MortalTekken> {
+  final int heartNumber;
+  final int playerNumber;
+
+  HeartHealthComponent({
+    required this.heartNumber,
+    required this.playerNumber,
+    required super.position,
+    required super.size,
+    super.scale,
+    super.angle,
+    super.anchor,
+    super.priority,
+  });
+
+  @override
+  Future<void> onLoad() async {
+    await super.onLoad();
+    final availableSprite = await game.loadSprite(
+      'health.png',
+      srcSize: Vector2.all(32),
+    );
+
+    final unavailableSprite = await game.loadSprite(
+      'health_no.png',
+      srcSize: Vector2.all(32),
+    );
+
+    sprites = {
+      HeartState.available: availableSprite,
+      HeartState.unavailable: unavailableSprite,
+    };
+
+    current = HeartState.available;
+  }
+
+  @override
+  void update(double dt) {
+    if (playerNumber == 1) {
+      if (game.playerHP1 < heartNumber) {
+        current = HeartState.unavailable;
+      } else {
+        current = HeartState.available;
+      }
+    } else {
+      if (game.playerHP2 < heartNumber) {
+        current = HeartState.unavailable;
+      } else {
+        current = HeartState.available;
+      }
+    }
+
+    super.update(dt);
+  }
+}
+
+class Hud extends PositionComponent with HasGameReference<MortalTekken> {
+  final int playerNumber;
+
+  Hud({
+    super.position,
+    super.size,
+    super.scale,
+    super.angle,
+    super.anchor,
+    super.children,
+    super.priority = 5,
+    required this.playerNumber,
+  });
+
+  late TextComponent _scoreTextComponent;
+
+  @override
+  Future<void> onLoad() async {
+    if (playerNumber == 1) {
+      for (var i = 1; i <= game.playerHP1; i++) {
+        final positionX = 40 * i;
+        await add(
+          HeartHealthComponent(
+            heartNumber: i,
+            position: Vector2(positionX.toDouble(), 20),
+            playerNumber: playerNumber,
+            size: Vector2.all(32),
+          ),
+        );
+      }
+    } else {
+      for (var i = 1; i <= game.playerHP2; i++) {
+        final positionX = 40 * i;
+        await add(
+          HeartHealthComponent(
+            heartNumber: i,
+            position: Vector2(positionX.toDouble(), 20),
+            playerNumber: playerNumber,
+            size: Vector2.all(32),
+          ),
+        );
+      }
+    }
   }
 }
